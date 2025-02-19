@@ -18,6 +18,14 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.cv2_util import (
     get_image_transform, optimal_row_cols)
 
+curr_dir = os.getcwd()
+ROOT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "arx5-sdk")
+ROOT_DIR = os.path.join(ROOT_DIR, "python")
+sys.path.append(ROOT_DIR)
+os.chdir(ROOT_DIR)
+from arx5_interface import Arx5CartesianController, EEFState, Gain
+os.chdir(curr_dir)
+
 DEFAULT_OBS_KEY_MAP = {
     # robot
     'ActualTCPPose': 'robot_eef_pose',
