@@ -35,7 +35,8 @@ class ARXRealEnv:
     def __init__(self, 
             # required params
             output_dir,
-            robot_ip,
+            arx_master_ip,
+            arx_slave_ip,
             # env params
             frequency=10,
             n_obs_steps=2,
@@ -157,8 +158,27 @@ class ARXRealEnv:
         if not init_joints:
             j_init = None
 
-        robot = ARXInterpolationController(
-            robot_ip=robot_ip,
+        arx_master = ARXInterpolationController(
+            robot_ip=arx_master_ip,
+            shm_manager=shm_manager,
+            frequency=125, # UR5 CB3 RTDE
+            lookahead_time=0.1,
+            gain=300,
+            max_pos_speed=max_pos_speed*cube_diag,
+            max_rot_speed=max_rot_speed*cube_diag,
+            launch_timeout=3,
+            tcp_offset_pose=[0,0,tcp_offset,0,0,0],
+            payload_mass=None,
+            payload_cog=None,
+            joints_init=j_init,
+            joints_init_speed=1.05,
+            soft_real_time=False,
+            verbose=False,
+            receive_keys=None,
+            get_max_k=max_obs_buffer_size
+            )
+        arx_slave = ARXInterpolationController(
+            robot_ip=arx_slave_ip,
             shm_manager=shm_manager,
             frequency=125, # UR5 CB3 RTDE
             lookahead_time=0.1,
@@ -177,7 +197,8 @@ class ARXRealEnv:
             get_max_k=max_obs_buffer_size
             )
         self.realsense = realsense
-        self.robot = robot
+        self.arx_master = arx_master
+        self.arx_slave = arx_slave
         self.multi_cam_vis = multi_cam_vis
         self.video_capture_fps = video_capture_fps
         self.frequency = frequency
@@ -202,11 +223,12 @@ class ARXRealEnv:
     # ======== start-stop API =============
     @property
     def is_ready(self):
-        return self.realsense.is_ready and self.robot.is_ready
+        return self.realsense.is_ready and self.arx_master.is_ready and self.arx_slave.is_ready
     
     def start(self, wait=True):
         self.realsense.start(wait=False)
-        self.robot.start(wait=False)
+        self.arx_master.start(wait=False)
+        self.arx_slave.start(wait=False)
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start(wait=False)
         if wait:
@@ -216,19 +238,22 @@ class ARXRealEnv:
         self.end_episode()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.stop(wait=False)
-        self.robot.stop(wait=False)
+        self.arx_master.stop(wait=False)
+        self.arx_slave.stop(wait=False)
         self.realsense.stop(wait=False)
         if wait:
             self.stop_wait()
 
     def start_wait(self):
         self.realsense.start_wait()
-        self.robot.start_wait()
+        self.arx_master.start_wait()
+        self.arx_slave.start_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start_wait()
     
     def stop_wait(self):
-        self.robot.stop_wait()
+        self.arx_master.stop_wait()
+        self.arx_slave.stop_wait()
         self.realsense.stop_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.stop_wait()
@@ -254,7 +279,8 @@ class ARXRealEnv:
             out=self.last_realsense_data)
 
         # 125 hz, robot_receive_timestamp
-        last_robot_data = self.robot.get_all_state()
+        last_master_data = self.arx_master.get_all_state()
+        last_slave_data = self.arx_slave.get_all_state()    
         # both have more than n_obs_steps data
 
         # align camera obs timestamps
@@ -276,8 +302,11 @@ class ARXRealEnv:
             camera_obs[f'camera_{camera_idx}'] = value['color'][this_idxs]
 
         # align robot obs
-        robot_timestamps = last_robot_data['robot_receive_timestamp']
-        this_timestamps = robot_timestamps
+        master_timestamps = last_master_data['robot_receive_timestamp']
+        slave_timestamps = last_slave_data['robot_receive_timestamp']   
+
+        # TODO: align observations for realsense camera and 
+        this_timestamps = slave_timestamps
         this_idxs = list()
         for t in obs_align_timestamps:
             is_before_idxs = np.nonzero(this_timestamps < t)[0]
@@ -308,48 +337,50 @@ class ARXRealEnv:
         obs_data['timestamp'] = obs_align_timestamps
         return obs_data
     
-    def exec_actions(self, 
-            actions: np.ndarray, 
-            timestamps: np.ndarray, 
-            stages: Optional[np.ndarray]=None):
-        assert self.is_ready
-        if not isinstance(actions, np.ndarray):
-            actions = np.array(actions)
-        if not isinstance(timestamps, np.ndarray):
-            timestamps = np.array(timestamps)
-        if stages is None:
-            stages = np.zeros_like(timestamps, dtype=np.int64)
-        elif not isinstance(stages, np.ndarray):
-            stages = np.array(stages, dtype=np.int64)
+    # def exec_actions(self, 
+    #         actions: np.ndarray, 
+    #         timestamps: np.ndarray, 
+    #         stages: Optional[np.ndarray]=None):
+    #     assert self.is_ready
+    #     if not isinstance(actions, np.ndarray):
+    #         actions = np.array(actions)
+    #     if not isinstance(timestamps, np.ndarray):
+    #         timestamps = np.array(timestamps)
+    #     if stages is None:
+    #         stages = np.zeros_like(timestamps, dtype=np.int64)
+    #     elif not isinstance(stages, np.ndarray):
+    #         stages = np.array(stages, dtype=np.int64)
 
-        # convert action to pose
-        receive_time = time.time()
-        is_new = timestamps > receive_time
-        new_actions = actions[is_new]
-        new_timestamps = timestamps[is_new]
-        new_stages = stages[is_new]
+    #     # convert action to pose
+    #     receive_time = time.time()
+    #     is_new = timestamps > receive_time
+    #     new_actions = actions[is_new]
+    #     new_timestamps = timestamps[is_new]
+    #     new_stages = stages[is_new]
 
-        # schedule waypoints
-        for i in range(len(new_actions)):
-            self.robot.schedule_waypoint(
-                pose=new_actions[i],
-                target_time=new_timestamps[i]
-            )
+    #     # schedule waypoints
+    #     for i in range(len(new_actions)):
+    #         self.arx_slave.schedule_waypoint(
+    #             pose=new_actions[i],
+    #             target_time=new_timestamps[i]
+    #         )
         
-        # record actions
-        if self.action_accumulator is not None:
-            self.action_accumulator.put(
-                new_actions,
-                new_timestamps
-            )
-        if self.stage_accumulator is not None:
-            self.stage_accumulator.put(
-                new_stages,
-                new_timestamps
-            )
-    
-    def get_robot_state(self):
-        return self.robot.get_state()
+    #     # record actions
+    #     if self.action_accumulator is not None:
+    #         self.action_accumulator.put(
+    #             new_actions,
+    #             new_timestamps
+    #         )
+    #     if self.stage_accumulator is not None:
+    #         self.stage_accumulator.put(
+    #             new_stages,
+    #             new_timestamps
+    #         )
+    def exec_slave_actions(self):
+        self.arx_master.get_all_state()
+        self.arx_slave.set_ee_pose(self.arx_master.get_ee_pose())
+    def get_slave_state(self):
+        return self.arx_slave.get_state()
 
     # recording API
     def start_episode(self, start_time=None):

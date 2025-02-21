@@ -19,16 +19,12 @@ from diffusion_policy.common.pose_trajectory_interpolator import PoseTrajectoryI
 
 class Command(enum.Enum):
     STOP = 0
-    SERVOL = 1
-    SCHEDULE_WAYPOINT = 2
-    RESET_TO_HOME = 3
-    SET_GAIN = 4
-    SET_TO_DAMPING = 5
+    START = 1
 
     
 
 
-class ARXInterpolationController(mp.Process):
+class ARXTeleOpController(mp.Process):
     """
     To ensure sending command to the robot with predictable latency
     this controller need its separate process (due to python GIL)
@@ -37,7 +33,8 @@ class ARXInterpolationController(mp.Process):
 
     def __init__(self,
             shm_manager: SharedMemoryManager, 
-            robot_ip, 
+            master_ip, 
+            slave_ip,
             frequency=125, 
             lookahead_time=0.1, 
             gain=300,
@@ -87,7 +84,8 @@ class ARXInterpolationController(mp.Process):
             assert joints_init.shape == (6,)
 
         super().__init__(name="ARXPositionalController")
-        self.robot_ip = robot_ip
+        self.master_ip = master_ip  
+        self.slave_ip = slave_ip    
         self.frequency = frequency
         self.lookahead_time = lookahead_time
         self.gain = gain
@@ -169,16 +167,16 @@ class ARXInterpolationController(mp.Process):
             print(f"[ARXPositionalController] Controller process spawned at {self.pid}")
 
         message = {
-            'cmd': 'RESET_TO_HOME',
-            'data': None
+            'cmd': Command.START.value,
+            'data': 0.0     # dummy
         }
         print(f"[ARXPositionalController] Reset to home")
         self.input_queue.put(message)
 
     def stop(self, wait=True):
         message = {
-            'cmd': 'RESET_TO_HOME',
-            'data': None
+            'cmd': Command.STOP.value,
+            'data': 0.0
         }
         self.input_queue.put(message)
         if wait:
