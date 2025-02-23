@@ -102,39 +102,17 @@ class ARXTeleOpController(mp.Process):
 
         # build input queue
         example = {
-            'cmd': Command.STOP.value,
-            'target_pose': np.zeros((6,), dtype=np.float64),
-            'gripper': 0.0,
-            'duration': 0.0,
-            'target_time': 0.0,
-            'gain': 0.0
+            'cmd': Command.STOP.value
         }
+
         input_queue = SharedMemoryQueue.create_from_examples(
             shm_manager=shm_manager,
             examples=example,
             buffer_size=256
         )
 
-        # # build ring buffer
-        # if receive_keys is None:
-        #     receive_keys = [
-        #         # 'ActualPose',
-        #         # 'ActualSpeed',
-        #         # 'ActualCurrent',
-
-        #         # 'TargetTCPPose',
-        #         # 'TargetTCPSpeed',
-        #         # 'TargetQ',
-        #         # 'TargetQd'
-        #         "actual_eef_pose",
-        #         "actual_joint_pos",
-        #         "actual_joint_vel",
-        #         "actual_joint_torque",
-        #     ]
-
         example = dict()
-        # for key in receive_keys:
-        #     example[key] = np.array(getattr(interface, 'get'+key)())
+
         example["actual_eef_pose"] = np.zeros(6)
         example["actual_joint_pos"] = np.zeros(6)
         example["actual_joint_vel"] = np.zeros(6)
@@ -168,7 +146,6 @@ class ARXTeleOpController(mp.Process):
 
         message = {
             'cmd': Command.START.value,
-            'data': 0.0     # dummy
         }
         print(f"[ARXPositionalController] Reset to home")
         self.input_queue.put(message)
@@ -176,7 +153,6 @@ class ARXTeleOpController(mp.Process):
     def stop(self, wait=True):
         message = {
             'cmd': Command.STOP.value,
-            'data': 0.0
         }
         self.input_queue.put(message)
         if wait:
@@ -200,55 +176,6 @@ class ARXTeleOpController(mp.Process):
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.stop()
-        
-    # ========= command methods ============
-    def servoL(self, pose, duration=0.1):
-        """
-        duration: desired time to reach pose
-        """
-        assert self.is_alive()
-        assert(duration >= (1/self.frequency))
-        pose = np.array(pose)
-        assert pose.shape == (6,)
-
-        message = {
-            'cmd': Command.SERVOL.value,
-            'target_pose': pose,
-            'duration': duration
-        }
-        self.input_queue.put(message)
-    
-    def schedule_waypoint(self, pose, target_time):
-        assert target_time > time.time()
-        pose = np.array(pose)
-        assert pose.shape == (6,)
-
-        message = {
-            'cmd': Command.SCHEDULE_WAYPOINT.value,
-            'target_pose': pose,
-            'target_time': target_time
-        }
-        self.input_queue.put(message)
-
-    def reset_to_home(self):
-        message = {
-            'cmd': Command.RESET_TO_HOME.value,
-            'data': None
-        }
-        self.input_queue.put(message)
-
-    def set_gain(self, gain):     
-        message = {
-            'cmd': Command.SET_GAIN.value,
-            'gain': gain
-        }
-        self.input_queue.put(message)
-
-    def set_to_damping(self):
-        message = {
-            'cmd': 'SET_TO_DAMPING',
-        }
-        self.input_queue.put(message)
 
     # ========= receive APIs =============
     def get_state(self, k=None, out=None):
@@ -268,11 +195,11 @@ class ARXTeleOpController(mp.Process):
                 0, os.SCHED_RR, os.sched_param(20))
 
         # start rtde
-        robot_ip = self.robot_ip
-        # rtde_c = RTDEControlInterface(hostname=robot_ip)
-        # rtde_r = RTDEReceiveInterface(hostname=robot_ip)
+        master_ip = self.master_ip
+        slave_ip = self.slave_ip
 
-        arx_robot = Arx5Client(robot_ip, 5555)   # Ramdom IP and port
+        arx_master = Arx5Client(master_ip, 5555)   # Ramdom IP and port
+        arx_slave = Arx5Client(slave_ip, 5555)
 
         try:
             if self.verbose:
@@ -291,24 +218,30 @@ class ARXTeleOpController(mp.Process):
             # # init pose
             # if self.joints_init is not None:
             #     assert rtde_c.moveJ(self.joints_init, self.joints_init_speed, 1.4)
-            arx_robot.reset_to_home()
+            arx_master.reset_to_home()
+            arx_slave.reset_to_home()       
 
 
-            # main loop
-            dt = 1. / self.frequency
-            # curr_pose = rtde_r.getActualTCPPose()
-            state_data = arx_robot.get_state()["data"]
+            # # main loop
+            # dt = 1. / self.frequency
+            # # curr_pose = rtde_r.getActualTCPPose()
+            # state_data = arx_robot.get_state()["data"]
 
-            # use monotonic time to make sure the control loop never go backward
-            curr_t = time.monotonic()
-            last_waypoint_time = curr_t
-            pose_interp = PoseTrajectoryInterpolator(
-                times=[curr_t],
-                poses=[state_data['ee_pose']]
-            )
+            # # use monotonic time to make sure the control loop never go backward
+            # curr_t = time.monotonic()
+            # last_waypoint_time = curr_t
+            # pose_interp = PoseTrajectoryInterpolator(
+            #     times=[curr_t],
+            #     poses=[state_data['ee_pose']]
+            # )
+
+            # Set Master Arm free to move
+            gain = arx_master.get_gain()["data"]
+            arx_slave.set_gain(gain * 0.2)
             
             iter_idx = 0
             keep_running = True
+            following = False
             while keep_running:
                 # start control iteration
                 # t_start = rtde_c.initPeriod()
@@ -319,7 +252,7 @@ class ARXTeleOpController(mp.Process):
                 # diff = t_now - pose_interp.times[-1]
                 # if diff > 0:
                 #     print('extrapolate', diff)
-                pose_command = pose_interp(t_now)
+                # pose_command = pose_interp(t_now)
                 vel = 0.5
                 acc = 0.5
                 # assert rtde_c.servoL(pose_command, 
@@ -327,14 +260,14 @@ class ARXTeleOpController(mp.Process):
                 #     dt, 
                 #     self.lookahead_time, 
                 #     self.gain)
-                arx_robot.set_ee_pose(pose_command[:6],pose_command[6])
+                # arx_slave.set_ee_pose(pose_command[:6],pose_command[6])
                 
                 # update robot state
                 state = dict()
                 # for key in self.receive_keys:
                 #     state[key] = np.array(getattr(rtde_r, 'get'+key)())
-                state_data = arx_robot.get_state()
-                gain = arx_robot.get_gain()
+                state_data = arx_slave.get_state()
+                gain = arx_slave.get_gain()
                 state["actual_eef_pose"] = state_data["actual_eef_pose"]
                 state["actual_joint_pos"] = state_data["actual_joint_pos"]   
                 state["actual_joint_vel"] = state_data["actual_joint_vel"]   
@@ -351,61 +284,27 @@ class ARXTeleOpController(mp.Process):
                     n_cmd = 0
 
                 # execute commands
-                for i in range(n_cmd):
-                    command = dict()
-                    for key, value in commands.items():
-                        command[key] = value[i]
-                    cmd = command['cmd']
-
+                if n_cmd > 0:
+                    cmd = commands['cmd'][0]    # Only get the frist command
+                    
                     if cmd == Command.STOP.value:
-                        keep_running = False
-                        # stop immediately, ignore later commands
-                        break
-                    elif cmd == Command.SERVOL.value:
-                        # since curr_pose always lag behind curr_target_pose
-                        # if we start the next interpolation with curr_pose
-                        # the command robot receive will have discontinouity 
-                        # and cause jittery robot behavior.
-                        target_pose = command['target_pose']
-                        duration = float(command['duration'])
-                        curr_time = t_now + dt
-                        t_insert = curr_time + duration
-                        pose_interp = pose_interp.drive_to_waypoint(
-                            pose=target_pose,
-                            time=t_insert,
-                            curr_time=curr_time,
-                            max_pos_speed=self.max_pos_speed,
-                            max_rot_speed=self.max_rot_speed
-                        )
-                        last_waypoint_time = t_insert
-                        if self.verbose:
-                            print("[RTDEPositionalController] New pose target:{} duration:{}s".format(
-                                target_pose, duration))
-                    elif cmd == Command.SCHEDULE_WAYPOINT.value:
-                        target_pose = command['target_pose']
-                        target_time = float(command['target_time'])
-                        # translate global time to monotonic time
-                        target_time = time.monotonic() - time.time() + target_time
-                        curr_time = t_now + dt
-                        pose_interp = pose_interp.schedule_waypoint(
-                            pose=target_pose,
-                            time=target_time,
-                            max_pos_speed=self.max_pos_speed,
-                            max_rot_speed=self.max_rot_speed,
-                            curr_time=curr_time,
-                            last_waypoint_time=last_waypoint_time
-                        )
-                        last_waypoint_time = target_time
-                    elif cmd == Command.RESET_TO_HOME.value:
-                        arx_robot.reset_to_home()
-                    elif cmd == Command.SET_GAIN.value:
-                        gain = command['gain']
-                        arx_robot.set_gain(gain)    
-                    elif cmd == Command.SET_TO_DAMPING.value:
-                        arx_robot.set_to_damping()
+                        following = False
                     else:
-                        keep_running = False
-                        break
+                        following = True
+
+                # Following
+                if following:
+                    master_state = arx_master.get_state()
+                    gain = arx_slave.get_gain()
+                    state = dict()
+                    state["actual_eef_pose"] = master_state["actual_eef_pose"]
+                    state["actual_joint_pos"] = master_state["actual_joint_pos"]   
+                    state["actual_joint_vel"] = state_data["actual_joint_vel"]   
+                    state["actual_joint_torque"] = state_data["actual_joint_torque"] 
+                    state['gain'] = gain
+                    state['robot_receive_timestamp'] = time.time()
+                    arx_slave.set_ee_pose(state["actual_eef_pose"][:6],state["actual_eef_pose"][6])
+
 
                 # first loop successful, ready to receive command
                 if iter_idx == 0:
@@ -424,8 +323,9 @@ class ARXTeleOpController(mp.Process):
             # rtde_c.stopScript()
             # rtde_c.disconnect()
             # rtde_r.disconnect()
-            arx_robot.reset_to_home()
+            arx_master.reset_to_home()
+            arx_slave.reset_to_home()
             self.ready_event.set()
 
             if self.verbose:
-                print(f"[RTDEPositionalController] Disconnected from robot: {robot_ip}")
+                print(f"[RTDEPositionalController] Disconnected from master robot: {master_ip} Slave robot: {slave_ip}")
