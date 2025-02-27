@@ -21,8 +21,6 @@ class Command(enum.Enum):
     STOP = 0
     START = 1
 
-    
-
 
 class ARXTeleOpController(mp.Process):
     """

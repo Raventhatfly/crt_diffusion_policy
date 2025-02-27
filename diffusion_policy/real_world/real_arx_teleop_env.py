@@ -316,7 +316,7 @@ class ARXRealEnv:
             this_idxs.append(this_idx)
 
         robot_obs_raw = dict()
-        for k, v in last_robot_data.items():
+        for k, v in last_slave_data.items():
             if k in self.obs_key_map:
                 robot_obs_raw[self.obs_key_map[k]] = v
         
@@ -328,7 +328,7 @@ class ARXRealEnv:
         if self.obs_accumulator is not None:
             self.obs_accumulator.put(
                 robot_obs_raw,
-                robot_timestamps
+                slave_timestamps
             )
 
         # return obs
@@ -337,48 +337,10 @@ class ARXRealEnv:
         obs_data['timestamp'] = obs_align_timestamps
         return obs_data
     
-    # def exec_actions(self, 
-    #         actions: np.ndarray, 
-    #         timestamps: np.ndarray, 
-    #         stages: Optional[np.ndarray]=None):
-    #     assert self.is_ready
-    #     if not isinstance(actions, np.ndarray):
-    #         actions = np.array(actions)
-    #     if not isinstance(timestamps, np.ndarray):
-    #         timestamps = np.array(timestamps)
-    #     if stages is None:
-    #         stages = np.zeros_like(timestamps, dtype=np.int64)
-    #     elif not isinstance(stages, np.ndarray):
-    #         stages = np.array(stages, dtype=np.int64)
-
-    #     # convert action to pose
-    #     receive_time = time.time()
-    #     is_new = timestamps > receive_time
-    #     new_actions = actions[is_new]
-    #     new_timestamps = timestamps[is_new]
-    #     new_stages = stages[is_new]
-
-    #     # schedule waypoints
-    #     for i in range(len(new_actions)):
-    #         self.arx_slave.schedule_waypoint(
-    #             pose=new_actions[i],
-    #             target_time=new_timestamps[i]
-    #         )
-        
-    #     # record actions
-    #     if self.action_accumulator is not None:
-    #         self.action_accumulator.put(
-    #             new_actions,
-    #             new_timestamps
-    #         )
-    #     if self.stage_accumulator is not None:
-    #         self.stage_accumulator.put(
-    #             new_stages,
-    #             new_timestamps
-    #         )
     def exec_slave_actions(self):
         self.arx_master.get_all_state()
         self.arx_slave.set_ee_pose(self.arx_master.get_ee_pose())
+        
     def get_slave_state(self):
         return self.arx_slave.get_state()
 
