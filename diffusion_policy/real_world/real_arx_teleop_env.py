@@ -19,6 +19,7 @@ from diffusion_policy.common.cv2_util import (
     get_image_transform, optimal_row_cols)
 
 from arx_interpolation_controller import ARXInterpolationController
+from arx_teleop_controller import ARXTeleOpController
 
 DEFAULT_OBS_KEY_MAP = {
     # robot
@@ -31,12 +32,11 @@ DEFAULT_OBS_KEY_MAP = {
     'timestamp': 'timestamp'
 }
 
-class ARXRealEnv:
+class ARXRealTeleopEnv:
     def __init__(self, 
             # required params
             output_dir,
-            arx_master_ip,
-            arx_slave_ip,
+            robot_ip,
             # env params
             frequency=10,
             n_obs_steps=2,
@@ -158,8 +158,8 @@ class ARXRealEnv:
         if not init_joints:
             j_init = None
 
-        arx_master = ARXInterpolationController(
-            robot_ip=arx_master_ip,
+        teleop_controller = ARXTeleOpController(
+            robot_ip=robot_ip,
             shm_manager=shm_manager,
             frequency=125, # UR5 CB3 RTDE
             lookahead_time=0.1,
@@ -177,28 +177,10 @@ class ARXRealEnv:
             receive_keys=None,
             get_max_k=max_obs_buffer_size
             )
-        arx_slave = ARXInterpolationController(
-            robot_ip=arx_slave_ip,
-            shm_manager=shm_manager,
-            frequency=125, # UR5 CB3 RTDE
-            lookahead_time=0.1,
-            gain=300,
-            max_pos_speed=max_pos_speed*cube_diag,
-            max_rot_speed=max_rot_speed*cube_diag,
-            launch_timeout=3,
-            tcp_offset_pose=[0,0,tcp_offset,0,0,0],
-            payload_mass=None,
-            payload_cog=None,
-            joints_init=j_init,
-            joints_init_speed=1.05,
-            soft_real_time=False,
-            verbose=False,
-            receive_keys=None,
-            get_max_k=max_obs_buffer_size
-            )
+        
+        
         self.realsense = realsense
-        self.arx_master = arx_master
-        self.arx_slave = arx_slave
+        self.teleop_controller = teleop_controller
         self.multi_cam_vis = multi_cam_vis
         self.video_capture_fps = video_capture_fps
         self.frequency = frequency
@@ -223,12 +205,11 @@ class ARXRealEnv:
     # ======== start-stop API =============
     @property
     def is_ready(self):
-        return self.realsense.is_ready and self.arx_master.is_ready and self.arx_slave.is_ready
+        return self.realsense.is_ready and self.teleop_controller.is_ready
     
     def start(self, wait=True):
         self.realsense.start(wait=False)
-        self.arx_master.start(wait=False)
-        self.arx_slave.start(wait=False)
+        self.teleop_controller.start(wait=False)
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start(wait=False)
         if wait:
@@ -238,22 +219,19 @@ class ARXRealEnv:
         self.end_episode()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.stop(wait=False)
-        self.arx_master.stop(wait=False)
-        self.arx_slave.stop(wait=False)
+        self.teleop_controller.stop(wait=False)
         self.realsense.stop(wait=False)
         if wait:
             self.stop_wait()
 
     def start_wait(self):
         self.realsense.start_wait()
-        self.arx_master.start_wait()
-        self.arx_slave.start_wait()
+        self.teleop_controller.start_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.start_wait()
     
     def stop_wait(self):
-        self.arx_master.stop_wait()
-        self.arx_slave.stop_wait()
+        self.teleop_controller.stop_wait()
         self.realsense.stop_wait()
         if self.multi_cam_vis is not None:
             self.multi_cam_vis.stop_wait()
@@ -279,8 +257,8 @@ class ARXRealEnv:
             out=self.last_realsense_data)
 
         # 125 hz, robot_receive_timestamp
-        last_master_data = self.arx_master.get_all_state()
-        last_slave_data = self.arx_slave.get_all_state()    
+        last_master_data = self.teleop_controller.get_master_all_state() 
+        last_slave_data = self.teleop_controller.get_slave_all_state()  
         # both have more than n_obs_steps data
 
         # align camera obs timestamps
@@ -337,12 +315,12 @@ class ARXRealEnv:
         obs_data['timestamp'] = obs_align_timestamps
         return obs_data
     
-    def exec_slave_actions(self):
-        self.arx_master.get_all_state()
-        self.arx_slave.set_ee_pose(self.arx_master.get_ee_pose())
+    # def exec_slave_actions(self):
+    #     self.arx_master.get_all_state()
+    #     self.arx_slave.set_ee_pose(self.arx_master.get_ee_pose())
         
     def get_slave_state(self):
-        return self.arx_slave.get_state()
+        return self.teleop_controller.get_slave_state()
 
     # recording API
     def start_episode(self, start_time=None):

@@ -31,8 +31,9 @@ class ARXTeleOpController(mp.Process):
 
     def __init__(self,
             shm_manager: SharedMemoryManager, 
-            master_ip, 
-            slave_ip,
+            robot_ip,
+            master_port = 6556,
+            slave_port = 6557,
             frequency=125, 
             lookahead_time=0.1, 
             gain=300,
@@ -82,8 +83,9 @@ class ARXTeleOpController(mp.Process):
             assert joints_init.shape == (6,)
 
         super().__init__(name="ARXPositionalController")
-        self.master_ip = master_ip  
-        self.slave_ip = slave_ip    
+        self.robot_ip = robot_ip
+        self.master_port = master_port
+        self.slave_port = slave_port
         self.frequency = frequency
         self.lookahead_time = lookahead_time
         self.gain = gain
@@ -121,7 +123,15 @@ class ARXTeleOpController(mp.Process):
         example["actual_gain"] = 0.0
         example['robot_receive_timestamp'] = time.time()
 
-        ring_buffer = SharedMemoryRingBuffer.create_from_examples(
+        master_ring_buffer = SharedMemoryRingBuffer.create_from_examples(
+            shm_manager=shm_manager,
+            examples=example,
+            get_max_k=get_max_k,
+            get_time_budget=0.2,
+            put_desired_frequency=frequency
+        )
+
+        slave_ring_buffer = SharedMemoryRingBuffer.create_from_examples(
             shm_manager=shm_manager,
             examples=example,
             get_max_k=get_max_k,
@@ -131,7 +141,8 @@ class ARXTeleOpController(mp.Process):
 
         self.ready_event = mp.Event()
         self.input_queue = input_queue
-        self.ring_buffer = ring_buffer
+        self.master_ring_buffer = master_ring_buffer
+        self.slave_ring_buffer = slave_ring_buffer
         self.receive_keys = receive_keys
     
     # ========= launch method ===========
@@ -176,14 +187,23 @@ class ARXTeleOpController(mp.Process):
         self.stop()
 
     # ========= receive APIs =============
-    def get_state(self, k=None, out=None):
+    def get_master_state(self, k=None, out=None):
         if k is None:
-            return self.ring_buffer.get(out=out)
+            return self.master_ring_buffer.get(out=out)
         else:
-            return self.ring_buffer.get_last_k(k=k,out=out)
+            return self.master_ring_buffer.get_last_k(k=k,out=out)
     
-    def get_all_state(self):
-        return self.ring_buffer.get_all()
+    def get_master_all_state(self):
+        return self.master_ring_buffer.get_all()
+    
+    def get_slave_state(self, k=None, out=None):
+        if k is None:
+            return self.slave_ring_buffer.get(out=out)
+        else:
+            return self.slave_ring_buffer.get_last_k(k=k,out=out)
+    
+    def get_slave_all_state(self):
+        return self.master_ring_buffer.get_all()
     
     # ========= main loop in process ============
     def run(self):
@@ -193,17 +213,15 @@ class ARXTeleOpController(mp.Process):
                 0, os.SCHED_RR, os.sched_param(20))
 
         # start rtde
-        master_ip = self.master_ip
-        slave_ip = self.slave_ip
-        arx_port = 8765
+        robot_ip = self.robot_ip
 
-        arx_master = Arx5Client(master_ip, arx_port)   # Ramdom IP and port
-        arx_slave = Arx5Client(slave_ip, arx_port)
+        arx_master = Arx5Client(robot_ip, self.master_port)   # Ramdom IP and port
+        arx_slave = Arx5Client(robot_ip, self.slave_port)
 
         try:
             if self.verbose:
-                print(f"[ARXPositionalController] Connect to master arm: {master_ip}")
-                print(f"[ARXPositionalController] Connect to slave arm: {slave_ip}")
+                print(f"[ARXPositionalController] Connect to master arm: {self.master_port}")
+                print(f"[ARXPositionalController] Connect to slave arm: {self.slave_port}")
 
             # set parameters
             # if self.tcp_offset_pose is not None:
@@ -274,7 +292,7 @@ class ARXTeleOpController(mp.Process):
                 state["actual_joint_torque"] = state_data["actual_joint_torque"] 
                 state['gain'] = gain
                 state['robot_receive_timestamp'] = time.time()
-                self.ring_buffer.put(state)
+                self.slave_ring_buffer.put(state)
 
                 # fetch command from queue
                 try:

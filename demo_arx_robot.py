@@ -22,7 +22,7 @@ import click
 import cv2
 import numpy as np
 import scipy.spatial.transform as st
-from diffusion_policy.real_world.real_arx_env import ARXRealEnv
+from diffusion_policy.real_world.real_arx_teleop_env import ARXRealTeleopEnv
 from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
 from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
@@ -31,7 +31,7 @@ from diffusion_policy.real_world.keystroke_counter import (
 
 @click.command()
 @click.option('--output', '-o', required=True, help="Directory to save demonstration dataset.")
-@click.option('--robot_ip', '-ri', required=True, help="UR5's IP address e.g. 192.168.0.204")
+@click.option('--robot_ip', '-ri', default="127.0.0.0", required=True, help="UR5's IP address e.g. 192.168.0.204")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--init_joints', '-j', is_flag=True, default=False, help="Whether to initialize robot joint configuration in the beginning.")
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
@@ -41,7 +41,7 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
             Spacemouse(shm_manager=shm_manager) as sm, \
-            ARXRealEnv(
+            ARXRealTeleopEnv(
                 output_dir=output, 
                 robot_ip=robot_ip, 
                 # recording resolution
@@ -65,8 +65,9 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
 
             time.sleep(1.0)
             print('Ready!')
-            state = env.get_robot_state()
-            target_pose = state['TargetTCPPose']
+            # state = env.get_slave_state()
+            # # target_pose = state['TargetTCPPose']
+            # target_pose = state['TargetEEFPose']
             t_start = time.monotonic()
             iter_idx = 0
             stop = False
