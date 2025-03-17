@@ -195,14 +195,15 @@ class ARXTeleOpController(mp.Process):
         # start rtde
         master_ip = self.master_ip
         slave_ip = self.slave_ip
+        arx_port = 8765
 
-        arx_master = Arx5Client(master_ip, 5555)   # Ramdom IP and port
-        arx_slave = Arx5Client(slave_ip, 5555)
+        arx_master = Arx5Client(master_ip, arx_port)   # Ramdom IP and port
+        arx_slave = Arx5Client(slave_ip, arx_port)
 
         try:
             if self.verbose:
-                # print(f"[RTDEPositionalController] Connect to robot: {robot_ip}")
-                pass
+                print(f"[ARXPositionalController] Connect to master arm: {master_ip}")
+                print(f"[ARXPositionalController] Connect to slave arm: {slave_ip}")
 
             # set parameters
             # if self.tcp_offset_pose is not None:
@@ -234,8 +235,9 @@ class ARXTeleOpController(mp.Process):
             # )
 
             # Set Master Arm free to move
-            gain = arx_master.get_gain()["data"]
-            arx_slave.set_gain(gain * 0.2)
+            gain = arx_master.get_gain()
+            gain = gain["kp"] * 0.2
+            arx_master.set_gain(gain)
             
             iter_idx = 0
             keep_running = True
@@ -251,8 +253,8 @@ class ARXTeleOpController(mp.Process):
                 # if diff > 0:
                 #     print('extrapolate', diff)
                 # pose_command = pose_interp(t_now)
-                vel = 0.5
-                acc = 0.5
+                # vel = 0.5
+                # acc = 0.5
                 # assert rtde_c.servoL(pose_command, 
                 #     vel, acc, # dummy, not used by ur5
                 #     dt, 
@@ -326,4 +328,4 @@ class ARXTeleOpController(mp.Process):
             self.ready_event.set()
 
             if self.verbose:
-                print(f"[RTDEPositionalController] Disconnected from master robot: {master_ip} Slave robot: {slave_ip}")
+                print(f"[ARXPositionalController] Disconnected from master arm: {master_ip} and slave arm: {slave_ip}")

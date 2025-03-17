@@ -128,19 +128,19 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
 
                 precise_wait(t_sample)
                 # get teleop command
-                sm_state = sm.get_motion_state_transformed()
+                # sm_state = sm.get_motion_state_transformed()
                 # print(sm_state)
-                dpos = sm_state[:3] * (env.max_pos_speed / frequency)
-                drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
+                # dpos = sm_state[:3] * (env.max_pos_speed / frequency)
+                # drot_xyz = sm_state[3:] * (env.max_rot_speed / frequency)
                 
-                if not sm.is_button_pressed(0):
-                    # translation mode
-                    drot_xyz[:] = 0
-                else:
-                    dpos[:] = 0
-                if not sm.is_button_pressed(1):
-                    # 2D translation mode
-                    dpos[2] = 0    
+                # if not sm.is_button_pressed(0):
+                #     # translation mode
+                #     drot_xyz[:] = 0
+                # else:
+                #     dpos[:] = 0
+                # if not sm.is_button_pressed(1):
+                #     # 2D translation mode
+                #     dpos[2] = 0    
                 
                 precise_wait(t_cycle_end)
                 iter_idx += 1
