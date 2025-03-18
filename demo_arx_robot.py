@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 import scipy.spatial.transform as st
 from diffusion_policy.real_world.real_arx_teleop_env import ARXRealTeleopEnv
-from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
+# from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
 from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.keystroke_counter import (
     KeystrokeCounter, Key, KeyCode
@@ -31,19 +31,22 @@ from diffusion_policy.real_world.keystroke_counter import (
 
 @click.command()
 @click.option('--output', '-o', required=True, help="Directory to save demonstration dataset.")
-@click.option('--robot_ip', '-ri', default="127.0.0.0", required=True, help="UR5's IP address e.g. 192.168.0.204")
+@click.option('--robot_ip', '-ri', default="127.0.0.0", help="UR5's IP address e.g. 192.168.0.204")
+@click.option('--master_port', '-mp', default="8675", help="Master Arm Port")
+@click.option('--slave_port','-sp', default="8766", help="Slave Arm Port")
 @click.option('--vis_camera_idx', default=0, type=int, help="Which RealSense camera to visualize.")
 @click.option('--init_joints', '-j', is_flag=True, default=False, help="Whether to initialize robot joint configuration in the beginning.")
 @click.option('--frequency', '-f', default=10, type=float, help="Control frequency in Hz.")
 @click.option('--command_latency', '-cl', default=0.01, type=float, help="Latency between receiving SapceMouse command to executing on Robot in Sec.")
-def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_latency):
+def main(output, robot_ip, master_port, slave_port, vis_camera_idx, init_joints, frequency, command_latency):
     dt = 1/frequency
     with SharedMemoryManager() as shm_manager:
         with KeystrokeCounter() as key_counter, \
-            Spacemouse(shm_manager=shm_manager) as sm, \
             ARXRealTeleopEnv(
                 output_dir=output, 
                 robot_ip=robot_ip, 
+                master_port=master_port,
+                slave_port=slave_port,
                 # recording resolution
                 obs_image_resolution=(1280,720),
                 frequency=frequency,
@@ -54,7 +57,9 @@ def main(output, robot_ip, vis_camera_idx, init_joints, frequency, command_laten
                 thread_per_video=3,
                 # video recording quality, lower is better (but slower).
                 video_crf=21,
-                shm_manager=shm_manager
+                shm_manager=shm_manager,
+                # cmera serial numbers
+                # camera_serial_numbers=["230322277180", "230322271473"]
             ) as env:
             cv2.setNumThreads(1)
 

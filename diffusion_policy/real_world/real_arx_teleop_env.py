@@ -5,7 +5,7 @@ import time
 import shutil
 import math
 from multiprocessing.managers import SharedMemoryManager
-from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
+# from diffusion_policy.real_world.rtde_interpolation_controller import RTDEInterpolationController
 from diffusion_policy.real_world.multi_realsense import MultiRealsense, SingleRealsense
 from diffusion_policy.real_world.video_recorder import VideoRecorder
 from diffusion_policy.common.timestamp_accumulator import (
@@ -18,8 +18,8 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.cv2_util import (
     get_image_transform, optimal_row_cols)
 
-from arx_interpolation_controller import ARXInterpolationController
-from arx_teleop_controller import ARXTeleOpController
+# from arx_interpolation_controller import ARXInterpolationController
+from diffusion_policy.real_world.arx_teleop_controller import ARXTeleOpController
 
 DEFAULT_OBS_KEY_MAP = {
     # robot
@@ -37,6 +37,8 @@ class ARXRealTeleopEnv:
             # required params
             output_dir,
             robot_ip,
+            master_port,
+            slave_port,
             # env params
             frequency=10,
             n_obs_steps=2,

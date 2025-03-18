@@ -7,10 +7,8 @@ from multiprocessing.managers import SharedMemoryManager
 import scipy.interpolate as si
 import scipy.spatial.transform as st
 import numpy as np
-# from rtde_control import RTDEControlInterface
-# from rtde_receive import RTDEReceiveInterface
-from arx_client import Arx5Client
-from arx_interface import ARXInterface
+from diffusion_policy.real_world.arx_client import Arx5Client
+# from diffusion_policy.real_world.arx_interface import ARXInterface
 from diffusion_policy.shared_memory.shared_memory_queue import (
     SharedMemoryQueue, Empty)
 from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemoryRingBuffer
@@ -32,8 +30,8 @@ class ARXTeleOpController(mp.Process):
     def __init__(self,
             shm_manager: SharedMemoryManager, 
             robot_ip,
-            master_port = 6556,
-            slave_port = 6557,
+            master_port = 8765,
+            slave_port = 8766,
             frequency=125, 
             lookahead_time=0.1, 
             gain=300,
@@ -120,7 +118,7 @@ class ARXTeleOpController(mp.Process):
         example["actual_gripper_pos"] = 0.0
         example["actual_gripper_vel"] = 0.0
         example["actual_gripper_torque"] = 0.0
-        example["actual_gain"] = 0.0
+        # example["actual_gain"] = 0.0
         example['robot_receive_timestamp'] = time.time()
 
         master_ring_buffer = SharedMemoryRingBuffer.create_from_examples(
@@ -215,7 +213,7 @@ class ARXTeleOpController(mp.Process):
         # start rtde
         robot_ip = self.robot_ip
 
-        arx_master = Arx5Client(robot_ip, self.master_port)   # Ramdom IP and port
+        arx_master = Arx5Client(robot_ip, self.master_port)
         arx_slave = Arx5Client(robot_ip, self.slave_port)
 
         try:
@@ -253,8 +251,10 @@ class ARXTeleOpController(mp.Process):
             # )
 
             # Set Master Arm free to move
+            arx_master.set_to_damping()
             gain = arx_master.get_gain()
-            gain = gain["kp"] * 0.2
+            gain["kd"] = gain["kd"] * 0.1
+            gain["gripper_kd"] = gain["gripper_kd"] * 0.1
             arx_master.set_gain(gain)
             
             iter_idx = 0
@@ -285,12 +285,13 @@ class ARXTeleOpController(mp.Process):
                 # for key in self.receive_keys:
                 #     state[key] = np.array(getattr(rtde_r, 'get'+key)())
                 state_data = arx_slave.get_state()
-                gain = arx_slave.get_gain()
-                state["actual_eef_pose"] = state_data["actual_eef_pose"]
-                state["actual_joint_pos"] = state_data["actual_joint_pos"]   
-                state["actual_joint_vel"] = state_data["actual_joint_vel"]   
-                state["actual_joint_torque"] = state_data["actual_joint_torque"] 
-                state['gain'] = gain
+                state["actual_eef_pose"] = state_data["ee_pose"]
+                state["actual_joint_pos"] = state_data["joint_pos"]   
+                state["actual_joint_vel"] = state_data["joint_vel"]   
+                state["actual_joint_torque"] = state_data["joint_torque"] 
+                state["actual_gripper_pos"] = state_data["gripper_pos"]
+                state["actual_gripper_vel"] = state_data["gripper_vel"]
+                state["actual_gripper_torque"] = state_data["gripper_torque"]
                 state['robot_receive_timestamp'] = time.time()
                 self.slave_ring_buffer.put(state)
 
@@ -313,21 +314,25 @@ class ARXTeleOpController(mp.Process):
                 # Following
                 if following:
                     master_state = arx_master.get_state()
-                    gain = arx_slave.get_gain()
+                    # gain = arx_slave.get_gain()
                     state = dict()
-                    state["actual_eef_pose"] = master_state["actual_eef_pose"]
-                    state["actual_joint_pos"] = master_state["actual_joint_pos"]   
-                    state["actual_joint_vel"] = state_data["actual_joint_vel"]   
-                    state["actual_joint_torque"] = state_data["actual_joint_torque"] 
-                    state['gain'] = gain
+                    state["ee_pose"] = master_state["ee_pose"]
+                    state["joint_pos"] = master_state["joint_pos"]   
+                    state["joint_vel"] = master_state["joint_vel"]   
+                    state["joint_torque"] = master_state["joint_torque"] 
+                    state["gripper_pos"] = master_state["gripper_pos"] * 4.0
+                    state["gripper_vel"] = master_state["gripper_vel"]
+                    state["gripper_torque"] = master_state["gripper_torque"]
                     state['robot_receive_timestamp'] = time.time()
-                    arx_slave.set_ee_pose(state["actual_eef_pose"][:6],state["actual_eef_pose"][6])
+                    arx_slave.set_ee_pose(state["ee_pose"], state["gripper_pos"])
 
 
                 # first loop successful, ready to receive command
                 if iter_idx == 0:
                     self.ready_event.set()
                 iter_idx += 1
+                
+                print(f"[ARXPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
 
                 if self.verbose:
                     print(f"[ARXPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
