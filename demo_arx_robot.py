@@ -84,7 +84,8 @@ def main(output, robot_ip, master_port, slave_port, vis_camera_idx, init_joints,
                 t_command_target = t_cycle_end + dt
 
                 # pump obs
-                obs = env.get_obs()
+                stage = 1
+                obs = env.get_obs(stage=stage)
 
                 # handle key presses
                 press_events = key_counter.get_press_events()

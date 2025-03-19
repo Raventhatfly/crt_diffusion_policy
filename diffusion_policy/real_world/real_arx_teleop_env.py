@@ -22,14 +22,21 @@ from diffusion_policy.common.cv2_util import (
 from diffusion_policy.real_world.arx_teleop_controller import ARXTeleOpController
 
 DEFAULT_OBS_KEY_MAP = {
-    # robot
-    'ActualTCPPose': 'robot_eef_pose',
-    'ActualTCPSpeed': 'robot_eef_pose_vel',
-    'ActualQ': 'robot_joint',
-    'ActualQd': 'robot_joint_vel',
-    # timestamps
-    'step_idx': 'step_idx',
-    'timestamp': 'timestamp'
+    # # robot
+    # 'ActualTCPPose': 'robot_eef_pose',
+    # 'ActualTCPSpeed': 'robot_eef_pose_vel',
+    # 'ActualQ': 'robot_joint',
+    # 'ActualQd': 'robot_joint_vel',
+    # # timestamps
+    # 'step_idx': 'step_idx',
+    'actual_eef_pose': 'eef_pose',
+    'actual_joint_pos': 'joint_pos',
+    'actual_joint_vel': 'joint_vel',
+    'actual_joint_torque': 'joint_torque',
+    'actual_gripper_pos' : 'gripper_pos',
+    'actual_gripper_vel' : 'gripper_torque',
+    'actual_gripper_torque' : 'gripper_torque',
+    'robot_receive_timestamp': 'timestamp'
 }
 
 class ARXRealTeleopEnv:
@@ -247,7 +254,7 @@ class ARXRealTeleopEnv:
         self.stop()
 
     # ========= async env API ===========
-    def get_obs(self) -> dict:
+    def get_obs(self, stage) -> dict:
         "observation dict"
         assert self.is_ready
 
@@ -259,9 +266,13 @@ class ARXRealTeleopEnv:
             out=self.last_realsense_data)
 
         # 125 hz, robot_receive_timestamp
-        last_master_data = self.teleop_controller.get_master_all_state() 
-        last_slave_data = self.teleop_controller.get_slave_all_state()  
+        # last_master_data = self.teleop_controller.get_master_all_state() 
+        # last_slave_data = self.teleop_controller.get_slave_all_state()  
         # both have more than n_obs_steps data
+        
+        last_master_data = self.teleop_controller.get_master_state(k=30) 
+        last_slave_data = self.teleop_controller.get_slave_state(k=30)
+        # print(last_slave_data["actual_eef_pose"])
 
         # align camera obs timestamps
         dt = 1 / self.frequency
@@ -283,9 +294,8 @@ class ARXRealTeleopEnv:
 
         # align robot obs
         master_timestamps = last_master_data['robot_receive_timestamp']
-        slave_timestamps = last_slave_data['robot_receive_timestamp']   
-
-        # TODO: align observations for realsense camera and 
+        slave_timestamps = last_slave_data['robot_receive_timestamp']  
+ 
         this_timestamps = slave_timestamps
         this_idxs = list()
         for t in obs_align_timestamps:
@@ -294,6 +304,8 @@ class ARXRealTeleopEnv:
             if len(is_before_idxs) > 0:
                 this_idx = is_before_idxs[-1]
             this_idxs.append(this_idx)
+
+        # print(this_idxs)
 
         robot_obs_raw = dict()
         for k, v in last_slave_data.items():
@@ -309,6 +321,24 @@ class ARXRealTeleopEnv:
             self.obs_accumulator.put(
                 robot_obs_raw,
                 slave_timestamps
+            )
+        
+        # convert action to pose
+        # print(last_master_data)
+        new_actions = np.array([last_master_data['actual_eef_pose'][-1]])
+        new_timestamps = np.array([last_master_data['robot_receive_timestamp'][-1]])
+        new_stages = np.array([stage])
+        
+        # record actions
+        if self.action_accumulator is not None:
+            self.action_accumulator.put(
+                new_actions,
+                new_timestamps
+            )
+        if self.stage_accumulator is not None:
+            self.stage_accumulator.put(
+                new_stages,
+                new_timestamps
             )
 
         # return obs
@@ -365,7 +395,6 @@ class ARXRealTeleopEnv:
     def end_episode(self):
         "Stop recording"
         assert self.is_ready
-        
         # stop video recorder
         self.realsense.stop_recording()
 
@@ -384,6 +413,7 @@ class ARXRealTeleopEnv:
             action_timestamps = self.action_accumulator.timestamps
             stages = self.stage_accumulator.actions
             n_steps = min(len(obs_timestamps), len(action_timestamps))
+            print(n_steps)
             if n_steps > 0:
                 episode = dict()
                 episode['timestamp'] = obs_timestamps[:n_steps]

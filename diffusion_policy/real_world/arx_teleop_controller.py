@@ -263,10 +263,10 @@ class ARXTeleOpController(mp.Process):
             while keep_running:
                 # start control iteration
                 # t_start = rtde_c.initPeriod()
-                t_start = time.perf_counter()
+                # t_start = time.perf_counter()
 
                 # send command to robot
-                t_now = time.monotonic()
+                t_start = time.monotonic()
                 # diff = t_now - pose_interp.times[-1]
                 # if diff > 0:
                 #     print('extrapolate', diff)
@@ -294,6 +294,17 @@ class ARXTeleOpController(mp.Process):
                 state["actual_gripper_torque"] = state_data["gripper_torque"]
                 state['robot_receive_timestamp'] = time.time()
                 self.slave_ring_buffer.put(state)
+
+                state_data = arx_master.get_state()
+                state["actual_eef_pose"] = state_data["ee_pose"]
+                state["actual_joint_pos"] = state_data["joint_pos"]   
+                state["actual_joint_vel"] = state_data["joint_vel"]   
+                state["actual_joint_torque"] = state_data["joint_torque"] 
+                state["actual_gripper_pos"] = state_data["gripper_pos"]
+                state["actual_gripper_vel"] = state_data["gripper_vel"]
+                state["actual_gripper_torque"] = state_data["gripper_torque"]
+                state['robot_receive_timestamp'] = time.time()
+                self.master_ring_buffer.put(state)
 
                 # fetch command from queue
                 try:
@@ -332,7 +343,8 @@ class ARXTeleOpController(mp.Process):
                     self.ready_event.set()
                 iter_idx += 1
                 
-                print(f"[ARXPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
+                time.sleep(1/self.frequency - (time.monotonic() - t_start))
+                # print(f"[ARXPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
 
                 if self.verbose:
                     print(f"[ARXPositionalController] Actual frequency {1/(time.perf_counter() - t_start)}")
