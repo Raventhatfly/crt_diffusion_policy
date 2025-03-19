@@ -83,10 +83,6 @@ def main(output, robot_ip, master_port, slave_port, vis_camera_idx, init_joints,
                 t_sample = t_cycle_end - command_latency
                 t_command_target = t_cycle_end + dt
 
-                # pump obs
-                stage = 1
-                obs = env.get_obs(stage=stage)
-
                 # handle key presses
                 press_events = key_counter.get_press_events()
                 for key_stroke in press_events:
@@ -113,6 +109,9 @@ def main(output, robot_ip, master_port, slave_port, vis_camera_idx, init_joints,
                             is_recording = False
                         # delete
                 stage = key_counter[Key.space]
+
+                # pump obs
+                obs = env.get_obs(stage=stage)
 
                 # visualize
                 vis_img = obs[f'camera_{vis_camera_idx}'][-1,:,:,::-1].copy()
