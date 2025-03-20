@@ -300,9 +300,9 @@ class ARXTeleOpController(mp.Process):
                 state["actual_joint_pos"] = state_data["joint_pos"]   
                 state["actual_joint_vel"] = state_data["joint_vel"]   
                 state["actual_joint_torque"] = state_data["joint_torque"] 
-                state["actual_gripper_pos"] = np.array(state_data["gripper_pos"]).reshape(1)
-                state["actual_gripper_vel"] = np.array(state_data["gripper_vel"]).reshape(1)
-                state["actual_gripper_torque"] = np.array(state_data["gripper_torque"]).reshape(1)
+                state["actual_gripper_pos"] = np.array(state_data["gripper_pos"]).reshape((1,1))
+                state["actual_gripper_vel"] = np.array(state_data["gripper_vel"]).reshape((1,1))
+                state["actual_gripper_torque"] = np.array(state_data["gripper_torque"]).reshape((1,1))
                 state['robot_receive_timestamp'] = time.time()
                 self.master_ring_buffer.put(state)
 

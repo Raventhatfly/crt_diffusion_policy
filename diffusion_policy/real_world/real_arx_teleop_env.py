@@ -310,6 +310,16 @@ class ARXRealTeleopEnv:
         robot_obs_raw = dict()
         for k, v in last_slave_data.items():
             if k in self.obs_key_map:
+                
+                # print(self.obs_key_map[k])
+                # if self.obs_key_map[k] == "gripper_pos" or "gripper_vel" or "gripper_torque":
+                #     v = v.reshape((-1,1))
+                # if self.obs_key_map[k] == "gripper_vel":
+                #     v = v.reshape((1,-1))
+                # if self.obs_key_map[k] == "gripper_torque":
+                #     v = v.reshape((1,-1))
+                v = v.reshape((30,-1))
+                print(v.shape)
                 robot_obs_raw[self.obs_key_map[k]] = v
         
         robot_obs = dict()
