@@ -319,7 +319,7 @@ class ARXRealTeleopEnv:
                 # if self.obs_key_map[k] == "gripper_torque":
                 #     v = v.reshape((1,-1))
                 v = v.reshape((30,-1))
-                print(v.shape)
+                # print(v.shape)
                 robot_obs_raw[self.obs_key_map[k]] = v
         
         robot_obs = dict()
@@ -335,7 +335,9 @@ class ARXRealTeleopEnv:
         
         # convert action to pose
         # print(last_master_data)
-        new_actions = np.array([last_master_data['actual_eef_pose'][-1]])
+        new_actions = last_master_data['actual_eef_pose'][-1].reshape((1,-1))
+        new_actions = np.hstack((new_actions,np.array([last_master_data['actual_gripper_pos'][-1]]).reshape((1,1))))
+        print(new_actions.shape)
         new_timestamps = np.array([last_master_data['robot_receive_timestamp'][-1]])
         new_stages = np.array([stage])
         
