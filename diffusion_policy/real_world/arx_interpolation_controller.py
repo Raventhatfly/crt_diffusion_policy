@@ -7,10 +7,7 @@ from multiprocessing.managers import SharedMemoryManager
 import scipy.interpolate as si
 import scipy.spatial.transform as st
 import numpy as np
-# from rtde_control import RTDEControlInterface
-# from rtde_receive import RTDEReceiveInterface
 from arx_client import Arx5Client
-from arx_interface import ARXInterface
 from diffusion_policy.shared_memory.shared_memory_queue import (
     SharedMemoryQueue, Empty)
 from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemoryRingBuffer
@@ -22,8 +19,7 @@ class Command(enum.Enum):
     SERVOL = 1
     SCHEDULE_WAYPOINT = 2
     RESET_TO_HOME = 3
-    SET_GAIN = 4
-    SET_TO_DAMPING = 5
+    SET_TO_DAMPING = 4
 
     
 
@@ -38,6 +34,7 @@ class ARXInterpolationController(mp.Process):
     def __init__(self,
             shm_manager: SharedMemoryManager, 
             robot_ip, 
+            robot_port,
             frequency=125, 
             lookahead_time=0.1, 
             gain=300,
@@ -88,6 +85,7 @@ class ARXInterpolationController(mp.Process):
 
         super().__init__(name="ARXPositionalController")
         self.robot_ip = robot_ip
+        self.robot_port = robot_port
         self.frequency = frequency
         self.lookahead_time = lookahead_time
         self.gain = gain
@@ -105,38 +103,17 @@ class ARXInterpolationController(mp.Process):
         # build input queue
         example = {
             'cmd': Command.STOP.value,
-            'target_pose': np.zeros((6,), dtype=np.float64),
-            'gripper': 0.0,
+            'target_pose': np.zeros((7,), dtype=np.float64),
             'duration': 0.0,
-            'target_time': 0.0,
-            'gain': 0.0
+            'target_time': 0.0
         }
         input_queue = SharedMemoryQueue.create_from_examples(
             shm_manager=shm_manager,
             examples=example,
             buffer_size=256
         )
-
-        # # build ring buffer
-        # if receive_keys is None:
-        #     receive_keys = [
-        #         # 'ActualPose',
-        #         # 'ActualSpeed',
-        #         # 'ActualCurrent',
-
-        #         # 'TargetTCPPose',
-        #         # 'TargetTCPSpeed',
-        #         # 'TargetQ',
-        #         # 'TargetQd'
-        #         "actual_eef_pose",
-        #         "actual_joint_pos",
-        #         "actual_joint_vel",
-        #         "actual_joint_torque",
-        #     ]
-
+        
         example = dict()
-        # for key in receive_keys:
-        #     example[key] = np.array(getattr(interface, 'get'+key)())
         example["actual_eef_pose"] = np.zeros(6)
         example["actual_joint_pos"] = np.zeros(6)
         example["actual_joint_vel"] = np.zeros(6)
@@ -167,13 +144,6 @@ class ARXInterpolationController(mp.Process):
             self.start_wait()
         if self.verbose:
             print(f"[ARXPositionalController] Controller process spawned at {self.pid}")
-
-        message = {
-            'cmd': 'RESET_TO_HOME',
-            'data': None
-        }
-        print(f"[ARXPositionalController] Reset to home")
-        self.input_queue.put(message)
 
     def stop(self, wait=True):
         message = {
@@ -211,7 +181,7 @@ class ARXInterpolationController(mp.Process):
         assert self.is_alive()
         assert(duration >= (1/self.frequency))
         pose = np.array(pose)
-        assert pose.shape == (6,)
+        assert pose.shape == (7,)
 
         message = {
             'cmd': Command.SERVOL.value,
@@ -223,7 +193,7 @@ class ARXInterpolationController(mp.Process):
     def schedule_waypoint(self, pose, target_time):
         assert target_time > time.time()
         pose = np.array(pose)
-        assert pose.shape == (6,)
+        assert pose.shape == (7,)
 
         message = {
             'cmd': Command.SCHEDULE_WAYPOINT.value,
@@ -239,16 +209,10 @@ class ARXInterpolationController(mp.Process):
         }
         self.input_queue.put(message)
 
-    def set_gain(self, gain):     
-        message = {
-            'cmd': Command.SET_GAIN.value,
-            'gain': gain
-        }
-        self.input_queue.put(message)
-
     def set_to_damping(self):
         message = {
             'cmd': 'SET_TO_DAMPING',
+            'data': None
         }
         self.input_queue.put(message)
 
@@ -271,42 +235,30 @@ class ARXInterpolationController(mp.Process):
 
         # start rtde
         robot_ip = self.robot_ip
-        # rtde_c = RTDEControlInterface(hostname=robot_ip)
-        # rtde_r = RTDEReceiveInterface(hostname=robot_ip)
+        robot_port = self.robot_port
 
-        arx_robot = Arx5Client(robot_ip, 5555)   # Ramdom IP and port
+        arx_robot = Arx5Client(robot_ip,robot_port)   # Ramdom IP and port
 
         try:
             if self.verbose:
-                # print(f"[RTDEPositionalController] Connect to robot: {robot_ip}")
-                pass
+                print(f"[ARXPositionalController] Connect to robot: {robot_ip}")
 
-            # set parameters
-            # if self.tcp_offset_pose is not None:
-            #     rtde_c.setTcp(self.tcp_offset_pose)
-            # if self.payload_mass is not None:
-            #     if self.payload_cog is not None:
-            #         assert rtde_c.setPayload(self.payload_mass, self.payload_cog)
-            #     else:
-            #         assert rtde_c.setPayload(self.payload_mass)
-            
-            # # init pose
-            # if self.joints_init is not None:
-            #     assert rtde_c.moveJ(self.joints_init, self.joints_init_speed, 1.4)
+            # init pose
             arx_robot.reset_to_home()
-
 
             # main loop
             dt = 1. / self.frequency
-            # curr_pose = rtde_r.getActualTCPPose()
             state_data = arx_robot.get_state()["data"]
+            pose = list(state_data["ee_pose"])
+            gripper_pos = state_data["gripper_pos"]
+            curr_pose = np.array(pose.append(gripper_pos))
 
             # use monotonic time to make sure the control loop never go backward
             curr_t = time.monotonic()
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
                 times=[curr_t],
-                poses=[state_data['ee_pose']]
+                poses=[curr_pose]
             )
             
             iter_idx = 0
@@ -399,15 +351,15 @@ class ARXInterpolationController(mp.Process):
                         )
                         last_waypoint_time = target_time
                     elif cmd == Command.RESET_TO_HOME.value:
-                        arx_robot.reset_to_home()
-                    elif cmd == Command.SET_GAIN.value:
-                        gain = command['gain']
-                        arx_robot.set_gain(gain)    
+                        arx_robot.reset_to_home()  
                     elif cmd == Command.SET_TO_DAMPING.value:
                         arx_robot.set_to_damping()
                     else:
                         keep_running = False
                         break
+                
+                # regulate frequency
+                time.sleep(1.0/self.frequency - (time.perf_counter()-t_start))
 
                 # first loop successful, ready to receive command
                 if iter_idx == 0:
@@ -419,15 +371,8 @@ class ARXInterpolationController(mp.Process):
 
         finally:
             # manditory cleanup
-            # decelerate
-            # rtde_c.servoStop()
-
-            # # terminate
-            # rtde_c.stopScript()
-            # rtde_c.disconnect()
-            # rtde_r.disconnect()
             arx_robot.reset_to_home()
             self.ready_event.set()
 
             if self.verbose:
-                print(f"[RTDEPositionalController] Disconnected from robot: {robot_ip}")
+                print(f"[ARXPositionalController] Disconnected from robot: {robot_ip}")
