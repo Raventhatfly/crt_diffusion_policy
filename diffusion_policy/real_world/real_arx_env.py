@@ -18,20 +18,18 @@ from diffusion_policy.common.replay_buffer import ReplayBuffer
 from diffusion_policy.common.cv2_util import (
     get_image_transform, optimal_row_cols)
 
-from arx_interpolation_controller import ARXInterpolationController
-
 DEFAULT_OBS_KEY_MAP = {
-    # robot
-    'ActualTCPPose': 'robot_eef_pose',
-    'ActualTCPSpeed': 'robot_eef_pose_vel',
-    'ActualQ': 'robot_joint',
-    'ActualQd': 'robot_joint_vel',
-    # timestamps
-    'step_idx': 'step_idx',
-    'timestamp': 'timestamp'
+    'actual_eef_pose': 'eef_pose',
+    'actual_joint_pos': 'joint_pos',
+    'actual_joint_vel': 'joint_vel',
+    'actual_joint_torque': 'joint_torque',
+    'actual_gripper_pos' : 'gripper_pos',
+    'actual_gripper_vel' : 'gripper_torque',
+    'actual_gripper_torque' : 'gripper_torque',
+    'robot_receive_timestamp': 'timestamp'
 }
 
-class ARXRealEnv:
+class RealARXEnv:
     def __init__(self, 
             # required params
             output_dir,
@@ -157,9 +155,9 @@ class ARXRealEnv:
         if not init_joints:
             j_init = None
 
-        robot = ARXInterpolationController(
-            robot_ip=robot_ip,
+        robot = RTDEInterpolationController(
             shm_manager=shm_manager,
+            robot_ip=robot_ip,
             frequency=125, # UR5 CB3 RTDE
             lookahead_time=0.1,
             gain=300,

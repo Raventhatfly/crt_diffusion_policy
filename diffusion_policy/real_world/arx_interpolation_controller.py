@@ -38,6 +38,7 @@ class ARXInterpolationController(mp.Process):
     def __init__(self,
             shm_manager: SharedMemoryManager, 
             robot_ip, 
+            robot_port,
             frequency=125, 
             lookahead_time=0.1, 
             gain=300,
@@ -88,6 +89,7 @@ class ARXInterpolationController(mp.Process):
 
         super().__init__(name="ARXPositionalController")
         self.robot_ip = robot_ip
+        self.robot_port = robot_port
         self.frequency = frequency
         self.lookahead_time = lookahead_time
         self.gain = gain
@@ -117,26 +119,8 @@ class ARXInterpolationController(mp.Process):
             buffer_size=256
         )
 
-        # # build ring buffer
-        # if receive_keys is None:
-        #     receive_keys = [
-        #         # 'ActualPose',
-        #         # 'ActualSpeed',
-        #         # 'ActualCurrent',
-
-        #         # 'TargetTCPPose',
-        #         # 'TargetTCPSpeed',
-        #         # 'TargetQ',
-        #         # 'TargetQd'
-        #         "actual_eef_pose",
-        #         "actual_joint_pos",
-        #         "actual_joint_vel",
-        #         "actual_joint_torque",
-        #     ]
 
         example = dict()
-        # for key in receive_keys:
-        #     example[key] = np.array(getattr(interface, 'get'+key)())
         example["actual_eef_pose"] = np.zeros(6)
         example["actual_joint_pos"] = np.zeros(6)
         example["actual_joint_vel"] = np.zeros(6)
@@ -204,7 +188,7 @@ class ARXInterpolationController(mp.Process):
         self.stop()
         
     # ========= command methods ============
-    def servoL(self, pose, duration=0.1):
+    def servoL(self, pose, gripper_pos, duration=0.1):
         """
         duration: desired time to reach pose
         """
@@ -216,6 +200,7 @@ class ARXInterpolationController(mp.Process):
         message = {
             'cmd': Command.SERVOL.value,
             'target_pose': pose,
+            'target_gripper_pos': gripper_pos,
             'duration': duration
         }
         self.input_queue.put(message)
@@ -271,28 +256,17 @@ class ARXInterpolationController(mp.Process):
 
         # start rtde
         robot_ip = self.robot_ip
+        robot_port = self.robot_port
         # rtde_c = RTDEControlInterface(hostname=robot_ip)
         # rtde_r = RTDEReceiveInterface(hostname=robot_ip)
 
-        arx_robot = Arx5Client(robot_ip, 5555)   # Ramdom IP and port
+        arx_robot = Arx5Client(robot_ip, robot_port)   # Ramdom IP and port
 
         try:
             if self.verbose:
                 # print(f"[RTDEPositionalController] Connect to robot: {robot_ip}")
                 pass
 
-            # set parameters
-            # if self.tcp_offset_pose is not None:
-            #     rtde_c.setTcp(self.tcp_offset_pose)
-            # if self.payload_mass is not None:
-            #     if self.payload_cog is not None:
-            #         assert rtde_c.setPayload(self.payload_mass, self.payload_cog)
-            #     else:
-            #         assert rtde_c.setPayload(self.payload_mass)
-            
-            # # init pose
-            # if self.joints_init is not None:
-            #     assert rtde_c.moveJ(self.joints_init, self.joints_init_speed, 1.4)
             arx_robot.reset_to_home()
 
 
@@ -306,7 +280,7 @@ class ARXInterpolationController(mp.Process):
             last_waypoint_time = curr_t
             pose_interp = PoseTrajectoryInterpolator(
                 times=[curr_t],
-                poses=[state_data['ee_pose']]
+                poses=np.hstack((np.array([state_data['ee_pose']]),np.array(state_data['gripper_pos']).reshape(1,1)))
             )
             
             iter_idx = 0
@@ -361,6 +335,7 @@ class ARXInterpolationController(mp.Process):
 
                     if cmd == Command.STOP.value:
                         keep_running = False
+                        arx_robot.reset_to_home()
                         # stop immediately, ignore later commands
                         break
                     elif cmd == Command.SERVOL.value:
@@ -369,6 +344,8 @@ class ARXInterpolationController(mp.Process):
                         # the command robot receive will have discontinouity 
                         # and cause jittery robot behavior.
                         target_pose = command['target_pose']
+                        gripper_pos = command['gripper_pos']
+                        target = np.hstack((target_pose,np.array(gripper_pos).reshape(1,1)))
                         duration = float(command['duration'])
                         curr_time = t_now + dt
                         t_insert = curr_time + duration
@@ -381,16 +358,18 @@ class ARXInterpolationController(mp.Process):
                         )
                         last_waypoint_time = t_insert
                         if self.verbose:
-                            print("[RTDEPositionalController] New pose target:{} duration:{}s".format(
+                            print("[ARXPositionalController] New pose target:{} duration:{}s".format(
                                 target_pose, duration))
                     elif cmd == Command.SCHEDULE_WAYPOINT.value:
                         target_pose = command['target_pose']
+                        gripper_pos = command['gripper_pos']
+                        target = np.hstack((target_pose,np.array(gripper_pos).reshape(1,1)))
                         target_time = float(command['target_time'])
                         # translate global time to monotonic time
                         target_time = time.monotonic() - time.time() + target_time
                         curr_time = t_now + dt
                         pose_interp = pose_interp.schedule_waypoint(
-                            pose=target_pose,
+                            pose=target,
                             time=target_time,
                             max_pos_speed=self.max_pos_speed,
                             max_rot_speed=self.max_rot_speed,
@@ -420,12 +399,6 @@ class ARXInterpolationController(mp.Process):
         finally:
             # manditory cleanup
             # decelerate
-            # rtde_c.servoStop()
-
-            # # terminate
-            # rtde_c.stopScript()
-            # rtde_c.disconnect()
-            # rtde_r.disconnect()
             arx_robot.reset_to_home()
             self.ready_event.set()
 
