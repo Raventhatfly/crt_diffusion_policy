@@ -31,7 +31,7 @@ shape_meta: &shape_meta
     #   shape: [1]
     #   type: low_dim
   action: 
-    shape: [6]
+    shape: [7]
 
 env_runner:
   _target_: diffusion_policy.env_runner.arx_runner.ARXRunner
