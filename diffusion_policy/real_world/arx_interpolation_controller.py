@@ -245,6 +245,7 @@ class ARXInterpolationController(mp.Process):
 
             # init pose
             arx_robot.reset_to_home()
+            print("[ARXPositionalController] Slave robot is set to initial pose.")
 
             # main loop
             dt = 1. / self.frequency
