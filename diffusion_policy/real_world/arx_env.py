@@ -286,7 +286,7 @@ class ARXEnv:
             if len(is_before_idxs) > 0:
                 this_idx = is_before_idxs[-1]
             this_idxs.append(this_idx)
-
+        # print(last_robot_data)
         robot_obs_raw = dict()
         for k, v in last_robot_data.items():
             if k in self.obs_key_map:
@@ -333,9 +333,10 @@ class ARXEnv:
         # schedule waypoints
         for i in range(len(new_actions)):
             self.robot.schedule_waypoint(
-                pose=new_actions[i],
+                pose=new_actions[i][:6],
                 target_time=new_timestamps[i]
             )
+            self.robot.set_gripper(actions[i][6])
         
         # record actions
         if self.action_accumulator is not None:

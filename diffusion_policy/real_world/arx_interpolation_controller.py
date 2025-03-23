@@ -7,7 +7,7 @@ from multiprocessing.managers import SharedMemoryManager
 import scipy.interpolate as si
 import scipy.spatial.transform as st
 import numpy as np
-from arx_client import Arx5Client
+from diffusion_policy.real_world.arx_client import Arx5Client
 from diffusion_policy.shared_memory.shared_memory_queue import (
     SharedMemoryQueue, Empty)
 from diffusion_policy.shared_memory.shared_memory_ring_buffer import SharedMemoryRingBuffer
@@ -18,8 +18,9 @@ class Command(enum.Enum):
     STOP = 0
     SERVOL = 1
     SCHEDULE_WAYPOINT = 2
-    RESET_TO_HOME = 3
-    SET_TO_DAMPING = 4
+    SET_GRIPPER = 3
+    RESET_TO_HOME = 4
+    SET_TO_DAMPING = 5
 
     
 
@@ -99,13 +100,15 @@ class ARXInterpolationController(mp.Process):
         self.joints_init_speed = joints_init_speed
         self.soft_real_time = soft_real_time
         self.verbose = verbose
+        self.gripper_scale = 4.0
 
         # build input queue
         example = {
             'cmd': Command.STOP.value,
-            'target_pose': np.zeros((7,), dtype=np.float64),
+            'target_pose': np.zeros((6,), dtype=np.float64),
             'duration': 0.0,
-            'target_time': 0.0
+            'target_time': 0.0,
+            'data': 0.0
         }
         input_queue = SharedMemoryQueue.create_from_examples(
             shm_manager=shm_manager,
@@ -147,7 +150,7 @@ class ARXInterpolationController(mp.Process):
 
     def stop(self, wait=True):
         message = {
-            'cmd': 'RESET_TO_HOME',
+            'cmd': Command.RESET_TO_HOME.value,
             'data': None
         }
         self.input_queue.put(message)
@@ -181,7 +184,7 @@ class ARXInterpolationController(mp.Process):
         assert self.is_alive()
         assert(duration >= (1/self.frequency))
         pose = np.array(pose)
-        assert pose.shape == (7,)
+        assert pose.shape == (6,)
 
         message = {
             'cmd': Command.SERVOL.value,
@@ -193,12 +196,19 @@ class ARXInterpolationController(mp.Process):
     def schedule_waypoint(self, pose, target_time):
         assert target_time > time.time()
         pose = np.array(pose)
-        assert pose.shape == (7,)
+        assert pose.shape == (6,)
 
         message = {
             'cmd': Command.SCHEDULE_WAYPOINT.value,
             'target_pose': pose,
             'target_time': target_time
+        }
+        self.input_queue.put(message)
+    
+    def set_gripper(self, pos):
+        message = {
+            'cmd': Command.SET_GRIPPER.value,
+            'data': pos * self.gripper_scale
         }
         self.input_queue.put(message)
 
@@ -249,10 +259,8 @@ class ARXInterpolationController(mp.Process):
 
             # main loop
             dt = 1. / self.frequency
-            state_data = arx_robot.get_state()["data"]
-            pose = list(state_data["ee_pose"])
-            gripper_pos = state_data["gripper_pos"]
-            curr_pose = np.array(pose.append(gripper_pos))
+            state_data = arx_robot.get_state()
+            curr_pose = state_data["ee_pose"]
 
             # use monotonic time to make sure the control loop never go backward
             curr_t = time.monotonic()
@@ -261,7 +269,7 @@ class ARXInterpolationController(mp.Process):
                 times=[curr_t],
                 poses=[curr_pose]
             )
-            
+            gripper_pos = 0.0
             iter_idx = 0
             keep_running = True
             while keep_running:
@@ -282,19 +290,18 @@ class ARXInterpolationController(mp.Process):
                 #     dt, 
                 #     self.lookahead_time, 
                 #     self.gain)
-                arx_robot.set_ee_pose(pose_command[:6],pose_command[6])
+                # print(pose_command.shape)
+                arx_robot.set_ee_pose(pose_command[:6], gripper_pos)
                 
                 # update robot state
                 state = dict()
                 # for key in self.receive_keys:
                 #     state[key] = np.array(getattr(rtde_r, 'get'+key)())
                 state_data = arx_robot.get_state()
-                gain = arx_robot.get_gain()
-                state["actual_eef_pose"] = state_data["actual_eef_pose"]
-                state["actual_joint_pos"] = state_data["actual_joint_pos"]   
-                state["actual_joint_vel"] = state_data["actual_joint_vel"]   
-                state["actual_joint_torque"] = state_data["actual_joint_torque"] 
-                state['gain'] = gain
+                state["actual_eef_pose"] = state_data["ee_pose"]
+                state["actual_joint_pos"] = state_data["joint_pos"]   
+                state["actual_joint_vel"] = state_data["joint_vel"]   
+                state["actual_joint_torque"] = state_data["joint_torque"] 
                 state['robot_receive_timestamp'] = time.time()
                 self.ring_buffer.put(state)
 
@@ -351,6 +358,8 @@ class ARXInterpolationController(mp.Process):
                             last_waypoint_time=last_waypoint_time
                         )
                         last_waypoint_time = target_time
+                    elif cmd == Command.SET_GRIPPER.value:
+                        gripper_pos = command['data']
                     elif cmd == Command.RESET_TO_HOME.value:
                         arx_robot.reset_to_home()  
                     elif cmd == Command.SET_TO_DAMPING.value:
@@ -360,7 +369,9 @@ class ARXInterpolationController(mp.Process):
                         break
                 
                 # regulate frequency
-                time.sleep(1.0/self.frequency - (time.perf_counter()-t_start))
+                time_remain = 1.0/self.frequency - (time.perf_counter()-t_start)
+                if time_remain > 0:
+                    time.sleep(time_remain)
 
                 # first loop successful, ready to receive command
                 if iter_idx == 0:

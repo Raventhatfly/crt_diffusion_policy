@@ -75,8 +75,8 @@ def main(output, robot_ip, master_port, slave_port, vis_camera_idx, init_joints,
 
             time.sleep(1.0)
             print('Ready!')
-            state = env.get_robot_state()
-            target_pose = state['TargetTCPPose']
+            # state = env.get_robot_state()
+            # target_pose = state['actual_eef_pose']
             t_start = time.monotonic()
             iter_idx = 0
             stop = False
