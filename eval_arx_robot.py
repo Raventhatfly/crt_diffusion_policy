@@ -35,7 +35,7 @@ from omegaconf import OmegaConf
 import scipy.spatial.transform as st
 # from diffusion_policy.real_world.real_env import RealEnv
 from diffusion_policy.real_world.arx_env import ARXEnv
-from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
+# from diffusion_policy.real_world.spacemouse_shared_memory import Spacemouse
 from diffusion_policy.common.precise_sleep import precise_wait
 from diffusion_policy.real_world.real_inference_util import (
     get_real_obs_resolution, 
@@ -143,7 +143,7 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
     print("action_offset:", action_offset)
 
     with SharedMemoryManager() as shm_manager:
-        with Spacemouse(shm_manager=shm_manager) as sm, ARXEnv(
+        with ARXEnv(
             output_dir=output, 
             robot_ip=robot_ip, 
             port=robot_port,
@@ -174,22 +174,26 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
             obs = env.get_obs()
             with torch.no_grad():
                 policy.reset()
+                # print("111")
                 obs_dict_np = get_real_obs_dict(
                     env_obs=obs, shape_meta=cfg.task.shape_meta)
+                # print("111")
                 obs_dict = dict_apply(obs_dict_np, 
                     lambda x: torch.from_numpy(x).unsqueeze(0).to(device))
+                # print("111")
                 result = policy.predict_action(obs_dict)
                 action = result['action'][0].detach().to('cpu').numpy()
-                assert action.shape[-1] == 2
+                # print(action.shape[-1])
+                assert action.shape[-1] == 7
                 del result
 
             print('Ready!')
             while True:
             #     # ========= human control loop ==========
             #     print("Human in control!")
-                state = env.get_robot_state()
-                target_pose = state['ee_pose']
-                target_gripper_pos = state['gripper_pos']
+                # state = env.get_robot_state()
+                # target_pose = state['actual_ee_pose']
+                # target_gripper_pos = state['actual_gripper_pos']
             #     t_start = time.monotonic()
             #     iter_idx = 0
                 # while True:
@@ -354,6 +358,7 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
                         # TODO: clip actions
 
                         # execute actions
+                        # print(action)
                         env.exec_actions(
                             actions=action,
                             timestamps=action_timestamps
@@ -393,7 +398,8 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
                             print('Terminated by the timeout!')
 
                         term_pose = np.array([ 3.40948500e-01,  2.17721816e-01,  4.59076878e-02,  2.22014183e+00, -2.22184883e+00, -4.07186655e-04])
-                        curr_pose = obs['robot_eef_pose'][-1]
+                        # print(obs["eef_pose"])
+                        curr_pose = obs['eef_pose'][-1]
                         dist = np.linalg.norm((curr_pose - term_pose)[:2], axis=-1)
                         if dist < 0.03:
                             # in termination area
@@ -421,6 +427,7 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
                     print("Interrupted!")
                     # stop robot.
                     env.end_episode()
+                    break
                 
                 print("Stopped.")
 
