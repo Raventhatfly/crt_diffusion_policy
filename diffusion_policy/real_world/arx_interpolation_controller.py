@@ -118,13 +118,13 @@ class ARXInterpolationController(mp.Process):
         
         example = dict()
         example["actual_eef_pose"] = np.zeros(6)
-        example["actual_joint_pos"] = np.zeros(6)
-        example["actual_joint_vel"] = np.zeros(6)
-        example["actual_joint_torque"] = np.zeros(6)
-        example["actual_gripper_pos"] = 0.0
-        example["actual_gripper_vel"] = 0.0
-        example["actual_gripper_torque"] = 0.0
-        example["actual_gain"] = 0.0
+        example["actual_joint_pos"] = np.zeros(7)
+        example["actual_joint_vel"] = np.zeros(7)
+        example["actual_joint_torque"] = np.zeros(7)
+        example["actual_gripper_pos"] = np.zeros(1)
+        example["actual_gripper_vel"] = np.zeros(1)
+        example["actual_gripper_torque"] = np.zeros(1)
+        example["actual_gain"] = np.zeros(1)
         example['robot_receive_timestamp'] = time.time()
 
         ring_buffer = SharedMemoryRingBuffer.create_from_examples(
@@ -299,9 +299,12 @@ class ARXInterpolationController(mp.Process):
                 #     state[key] = np.array(getattr(rtde_r, 'get'+key)())
                 state_data = arx_robot.get_state()
                 state["actual_eef_pose"] = state_data["ee_pose"]
-                state["actual_joint_pos"] = state_data["joint_pos"]   
-                state["actual_joint_vel"] = state_data["joint_vel"]   
-                state["actual_joint_torque"] = state_data["joint_torque"] 
+                state["actual_joint_pos"] = np.hstack((state_data["joint_pos"], np.array(state_data["gripper_pos"])))   
+                state["actual_joint_vel"] = np.hstack((state_data["joint_vel"], np.array(state_data["gripper_vel"])))     
+                state["actual_joint_torque"] = np.hstack((state_data["joint_torque"], np.array(state_data["gripper_torque"]))) 
+                state["actual_gripper_pos"] = state_data["gripper_pos"]
+                state["actual_gripper_vel"] = state_data["gripper_vel"]
+                state["actual_gripper_torque"] = state_data["gripper_torque"] 
                 state['robot_receive_timestamp'] = time.time()
                 self.ring_buffer.put(state)
 
