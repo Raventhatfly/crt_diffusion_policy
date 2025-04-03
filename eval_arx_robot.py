@@ -356,6 +356,8 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
                         # this_target_poses[:,:2] = np.clip(
                         #     this_target_poses[:,:2], [0.25, -0.45], [0.77, 0.40])
                         # TODO: clip actions
+                        action[:,6] = np.clip(action[:,6], 0.01, 100.0)
+                        # print(action)
 
                         # execute actions
                         # print(action)
