@@ -100,7 +100,6 @@ class ARXInterpolationController(mp.Process):
         self.joints_init_speed = joints_init_speed
         self.soft_real_time = soft_real_time
         self.verbose = verbose
-        self.gripper_scale = 4.0
 
         # build input queue
         example = {
@@ -208,7 +207,7 @@ class ARXInterpolationController(mp.Process):
     def set_gripper(self, pos):
         message = {
             'cmd': Command.SET_GRIPPER.value,
-            'data': pos * self.gripper_scale
+            'data': pos
         }
         self.input_queue.put(message)
 
@@ -291,6 +290,7 @@ class ARXInterpolationController(mp.Process):
                 #     self.lookahead_time, 
                 #     self.gain)
                 # print(pose_command.shape)
+                # arx_robot.set_ee_pose(pose_command[:6], gripper_pos)
                 arx_robot.set_ee_pose(pose_command[:6], gripper_pos)
                 
                 # update robot state

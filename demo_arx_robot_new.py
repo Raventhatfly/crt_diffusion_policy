@@ -144,7 +144,8 @@ def main(output, robot_ip, master_port, slave_port, vis_camera_idx, init_joints,
                 master_state = arx_master.get_state()
                 ee_pose = master_state["ee_pose"]
                 gripper_pos = master_state["gripper_pos"]
-                action = np.hstack((ee_pose,gripper_pos))
+                gripper_scale = 4.0
+                action = np.hstack((ee_pose,gripper_pos*gripper_scale))
 
                 # execute teleop command
                 env.exec_actions(
