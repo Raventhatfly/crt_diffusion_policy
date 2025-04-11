@@ -25,7 +25,7 @@ shape_meta: &shape_meta
       shape: [6]
       type: low_dim
     joint_pos:
-      shape: [6]
+      shape: [7]
       type: low_dim
     # gripper_pos:
     #   shape: [1]
