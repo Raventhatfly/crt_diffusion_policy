@@ -19,7 +19,7 @@ keypoint_visible_rate: 1.0
 obs_as_global_cond: True
 
 policy:
-  _target_: diffusion_policy.policy.flow_matching_unet_hybrid_image_policy.DiffusionUnetHybridImagePolicy
+  _target_: diffusion_policy.policy.flow_matching_unet_hybrid_image_policy.FlowMatchingUnetHybridImagePolicy
 
   shape_meta: ${shape_meta}
   horizon: ${horizon}

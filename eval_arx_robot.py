@@ -92,7 +92,7 @@ def main(input, output, robot_ip, robot_port, match_dataset, match_episode,
     # hacks for method-specific setup.
     action_offset = 0
     delta_action = False
-    if 'diffusion' in cfg.name:
+    if 'diffusion' or 'flow_matching' in cfg.name:
         # diffusion model
         policy: BaseImagePolicy
         policy = workspace.model
