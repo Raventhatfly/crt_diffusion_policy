@@ -21,6 +21,9 @@ shape_meta: &shape_meta
     # camera_4:
     #   shape: ${task.image_shape}
     #   type: rgb
+    joint_torque:
+      shape: [7]
+      type: low_dim
     eef_pose:
       shape: [6]
       type: low_dim

@@ -10,13 +10,15 @@ from diffusion_policy.policy.base_image_policy import BaseImagePolicy
 from diffusion_policy.model.diffusion.conditional_unet1d import ConditionalUnet1D
 from diffusion_policy.model.diffusion.mask_generator import LowdimMaskGenerator
 from diffusion_policy.model.vision.multi_image_obs_encoder import MultiImageObsEncoder
+from diffusion_policy.model.vision.multi_image_torque_obs_encoder import MultiImageTorqueObsEncoder
 from diffusion_policy.common.pytorch_util import dict_apply
 
 class DiffusionUnetImagePolicy(BaseImagePolicy):
     def __init__(self, 
             shape_meta: dict,
             noise_scheduler: DDPMScheduler,
-            obs_encoder: MultiImageObsEncoder,
+            # obs_encoder: MultiImageObsEncoder,
+            obs_encoder: MultiImageTorqueObsEncoder,
             horizon, 
             n_action_steps, 
             n_obs_steps,
