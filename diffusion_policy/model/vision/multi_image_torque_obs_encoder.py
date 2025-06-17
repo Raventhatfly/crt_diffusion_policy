@@ -126,8 +126,11 @@ class MultiImageTorqueObsEncoder(ModuleAttrMixin):
         self.key_shape_map = key_shape_map
 
         # rnn
-        dof = key_shape_map['joint_torque'][0]
-        self.rnn = nn.GRU(input_size=dof, hidden_size=dof, batch_first=True, num_layers=2)
+        if 'joint_torque' in low_dim_keys:
+            dof = key_shape_map['joint_torque'][0]
+            self.rnn = nn.GRU(input_size=dof, hidden_size=dof, batch_first=True, num_layers=2)
+        else:
+            self.rnn = None
 
     def forward(self, obs_dict):
         batch_size = None
