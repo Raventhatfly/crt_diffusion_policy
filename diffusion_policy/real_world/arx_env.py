@@ -195,6 +195,7 @@ class ARXEnv:
         self.last_realsense_data = None
         # recording buffers
         self.obs_accumulator = None
+        self.torque_accumulator = None
         self.action_accumulator = None
         self.stage_accumulator = None
 
@@ -293,13 +294,29 @@ class ARXEnv:
                 robot_obs_raw[self.obs_key_map[k]] = v
         
         robot_obs = dict()
+        torque_idxs = list()
+        for i in range(len(this_idxs)):
+            for j in range(10):
+                torque_idxs.append(this_idxs[i] + j)
+                
         for k, v in robot_obs_raw.items():
-            robot_obs[k] = v[this_idxs]
+            if k == 'joint_torque':
+                robot_obs[k] = v[torque_idxs]
+            else:
+                robot_obs[k] = v[this_idxs]
 
         # accumulate obs
         if self.obs_accumulator is not None:
             self.obs_accumulator.put(
                 robot_obs_raw,
+                robot_timestamps
+            )
+        # accumulate torque obs
+        torque_data = dict()
+        torque_data['joint_torque'] = last_robot_data['joint_torque']
+        if self.torque_accumulator is not None:
+            self.torque_accumulator.put(
+                torque_data,
                 robot_timestamps
             )
 
@@ -381,6 +398,10 @@ class ARXEnv:
             start_time=start_time,
             dt=1/self.frequency
         )
+        self.torque_accumulator = TimestampObsAccumulator(
+            start_time=start_time,
+            dt=1/self.frequency/10
+        )
         self.action_accumulator = TimestampActionAccumulator(
             start_time=start_time,
             dt=1/self.frequency
@@ -407,6 +428,7 @@ class ARXEnv:
             # get_obs and exec_actions, which will be in the same thread.
             # We don't need to worry new data come in here.
             obs_data = self.obs_accumulator.data
+            obs_torque_data = self.torque_accumulator.data
             obs_timestamps = self.obs_accumulator.timestamps
 
             actions = self.action_accumulator.actions
@@ -419,12 +441,16 @@ class ARXEnv:
                 episode['action'] = actions[:n_steps]
                 episode['stage'] = stages[:n_steps]
                 for key, value in obs_data.items():
-                    episode[key] = value[:n_steps]
+                    if key == 'joint_torque':
+                        episode['joint_torque'] = obs_torque_data['joint_torque'][:n_steps * 10]
+                    else:
+                        episode[key] = value[:n_steps]
                 self.replay_buffer.add_episode(episode, compressors='disk')
                 episode_id = self.replay_buffer.n_episodes - 1
                 print(f'Episode {episode_id} saved!')
             
             self.obs_accumulator = None
+            self.torque_accumulator = None
             self.action_accumulator = None
             self.stage_accumulator = None
 
