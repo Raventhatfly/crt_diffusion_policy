@@ -129,8 +129,12 @@ class MultiImageTorqueObsEncoder(ModuleAttrMixin):
         if 'joint_torque' in low_dim_keys:
             dof = key_shape_map['joint_torque'][0]
             self.rnn = nn.GRU(input_size=dof, hidden_size=dof, batch_first=True, num_layers=2)
+            self.fc1 = nn.Linear(dof, 120)
+            self.fc2 = nn.Linear(120, dof)
         else:
             self.rnn = None
+            self.fc1 = None
+            self.fc2 = None
 
     def forward(self, obs_dict):
         batch_size = None
@@ -181,7 +185,11 @@ class MultiImageTorqueObsEncoder(ModuleAttrMixin):
                 assert batch_size == data.shape[0]
             assert data.shape[1:] == self.key_shape_map[key]
             if key == 'joint_torque':
-                data, hn = self.rnn(data)
+                # data, hn = self.rnn(data)
+                data = self.fc1(data)
+                data = torch.relu(data)
+                data = self.fc2(data)
+                data = torch.relu(data)
             features.append(data)
         
         # concatenate all features
